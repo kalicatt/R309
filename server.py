@@ -25,9 +25,7 @@ def main():
         elif message == 'bye':
             client_socket.send('Client will be disconnected'.encode())
             client_socket.close()
-        else:
-            reply = f'Hello {message}!'
-            client_socket.send(reply.encode())
+        
 
         client_socket.close()
 

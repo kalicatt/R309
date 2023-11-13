@@ -30,12 +30,14 @@ class ChatWindow(QWidget):
         self.client_thread = ClientThread(self.socket)
         self.client_thread.received_message.connect(self.update_chat)
         self.client_thread.start()
+        
 
     def init_ui(self):
         self.chat_history = QTextEdit()
         self.chat_history.setReadOnly(True)
         
         self.message_box = QLineEdit()
+        self.message_box.returnPressed.connect(self.send_message)
         
         self.send_button = QPushButton('Envoyer')
         self.send_button.clicked.connect(self.send_message)

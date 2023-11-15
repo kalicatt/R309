@@ -1,4 +1,5 @@
 import sys
+print(sys.executable)
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit
 from PyQt5.QtCore import QThread, pyqtSignal
 import socket

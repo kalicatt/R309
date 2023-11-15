@@ -1,17 +1,15 @@
 import socket
 import threading
-import sys
-import time
 import mysql.connector
 import bcrypt
 
 # Fonction pour établir une connexion à la base de données MySQL
 def get_database_connection():
     return mysql.connector.connect(
-        host="localhost",
-        user="admin", #entre ici votre nom admin pour la base de donnee
-        password="admin", #entre ici votre mdp admin pour la base de donnee
-        database="chat_server"
+        host="localhost",         # ou l'adresse de votre serveur de base de données
+        user="admin", # l'utilisateur de la base de données
+        password="admin", # le mot de passe
+        database="chat_server"    # le nom de la base de données
     )
 
 # Fonction pour initialiser la base de données et les tables
@@ -92,28 +90,36 @@ def broadcast(message, sender_username=None):
 
 # Fonction pour gérer chaque client connecté
 def handle_client(client_socket, client_address):
-    client_socket.send("Enter your username: ".encode())
+    # Réception de la commande spéciale pour l'inscription
+    cmd = client_socket.recv(1024).decode().strip()
+
+    # Réception du nom d'utilisateur et du mot de passe
     username = client_socket.recv(1024).decode().strip()
-    client_socket.send("Enter your password: ".encode())
     password = client_socket.recv(1024).decode().strip()
 
     with get_database_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT password FROM users WHERE username = %s", (username,))
+        cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
         user = cursor.fetchone()
 
-        if user:
-            # Vérifier le mot de passe
-            if not verify_password(user[0], password):
-                client_socket.send(f"Incorrect password. Connection refused.".encode())
+        if cmd == "REGISTER":
+            if user:
+                client_socket.send(f"Username {username} is already taken. Please try a different username.".encode())
                 client_socket.close()
                 return
+            else:
+                # Hacher le mot de passe avant de l'enregistrer
+                hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+                cursor.execute("INSERT INTO users (username, password, ip_address) VALUES (%s, %s, %s)",
+                               (username, hashed_password, str(client_address)))
+                conn.commit()
+        elif user and bcrypt.checkpw(password.encode(), user[1].encode()):
+            # Connexion réussie
+            client_socket.send("Login successful!".encode())
         else:
-            # Créer un nouvel utilisateur si non existant
-            hashed_password = hash_password(password)
-            cursor.execute("INSERT INTO users (username, password, ip_address) VALUES (%s, %s, %s)",
-                           (username, hashed_password, str(client_address)))
-            conn.commit()
+            client_socket.send("Invalid login credentials.".encode())
+            client_socket.close()
+            return
 
     clients[username] = client_socket
     broadcast(f"{username} has joined the chat.", sender_username=username)
@@ -157,7 +163,6 @@ def server_command():
 # Fonction principale du serveur
 def main():
     initialize_database()
-
     host = 'localhost'
     port = 50000
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -165,21 +170,16 @@ def main():
     server_socket.listen()
     print(f"Server is listening on {host}:{port}")
 
-    server_command_thread = threading.Thread(target=server_command)
-    server_command_thread.start()
-
     try:
-        while not shutdown_flag.is_set():
+        while True:
             client_socket, client_address = server_socket.accept()
             print(f"Connection from {client_address}")
             client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
             client_thread.start()
     except KeyboardInterrupt:
-        print("Server is shutting down due to keyboard interrupt.")
-        shutdown_flag.set()
+        print("Server is shutting down.")
     finally:
         server_socket.close()
-        sys.exit()
 
 if __name__ == '__main__':
     main()

@@ -1,13 +1,13 @@
 import socket
 import threading
 import sys
+import time  # Importé pour le délai
 
 # Ce dictionnaire gardera une trace des noms d'utilisateurs et des connexions clients.
 clients = {}
 shutdown_flag = threading.Event()
 
 def send_private_message(sender, message):
-    # Format du message privé: "@destinataire message"
     if message.startswith("@"):
         parts = message.split(" ", 1)
         if len(parts) > 1 and parts[0][1:] in clients:
@@ -35,6 +35,7 @@ def handle_client(client_socket, client_address):
         return
 
     clients[username] = client_socket
+    client_socket.send(f"Welcome {username}, you are now connected to the chat.".encode())  # Confirmation ajoutée
     broadcast(f"{username} has joined the chat.", exclude_address=username)
 
     while True:
@@ -63,8 +64,10 @@ def server_command():
     while not shutdown_flag.is_set():
         cmd = input("")
         if cmd.lower() == 'arret':
+            broadcast("Server is shutting down in 5 seconds...")
+            time.sleep(5)  # Attendre 5 secondes
             shutdown_flag.set()
-            broadcast("Server is shutting down now!")
+            broadcast("Server is now shutting down.")
             print("Server shutdown initiated.")
             for sock in clients.values():
                 sock.close()

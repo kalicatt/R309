@@ -31,14 +31,16 @@ class ChatWindow(QWidget):
         self.client_thread = ClientThread(self.socket)
         self.client_thread.received_message.connect(self.update_chat)
         self.client_thread.start()
+        
 
     def init_ui(self):
         self.chat_history = QTextEdit()
         self.chat_history.setReadOnly(True)
         
         self.message_box = QLineEdit()
+        self.message_box.returnPressed.connect(self.send_message)
         
-        self.send_button = QPushButton('Send')
+        self.send_button = QPushButton('Envoyer')
         self.send_button.clicked.connect(self.send_message)
         
         layout = QVBoxLayout()
@@ -47,14 +49,14 @@ class ChatWindow(QWidget):
         layout.addWidget(self.send_button)
 
         self.setLayout(layout)
-        self.setWindowTitle('Chat Client')
+        self.setWindowTitle('Serveur Discord')
         self.resize(400, 300)
 
     def send_message(self):
         message = self.message_box.text()
         self.message_box.clear()
         if message:
-            self.update_chat(f"Me: {message}")  # Add the user's message to the chat history
+            self.update_chat(f"Moi: {message}")  # Add the user's message to the chat history
             self.client_thread.send_message(message)
 
     def update_chat(self, message):

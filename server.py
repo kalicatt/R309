@@ -73,12 +73,16 @@ def send_private_message(sender, message):
     return False
 
 # Fonction pour diffuser les messages à tous les clients
+# Correction dans la fonction broadcast
 def broadcast(message, sender_username=None):
+    sender_id = None
     with get_database_connection() as conn:
         cursor = conn.cursor()
         if sender_username:
             cursor.execute("SELECT id FROM users WHERE username = %s", (sender_username,))
-            sender_id = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            if result:
+                sender_id = result[0]
             cursor.execute("INSERT INTO messages (sender_id, message) VALUES (%s, %s)", (sender_id, message))
             conn.commit()
 
@@ -88,39 +92,35 @@ def broadcast(message, sender_username=None):
                 sock.send(message.encode())
             except Exception as e:
                 print(f"Error sending message to {username}: {e}")
+                sock.close()
+                del clients[username]
+
 
 # Fonction pour gérer chaque client connecté
+# Correction dans la fonction handle_client
 def handle_client(client_socket, client_address):
-    # Réception de la commande spéciale pour l'inscription
-    cmd = client_socket.recv(1024).decode().strip()
-
-    # Réception du nom d'utilisateur et du mot de passe
-    username = client_socket.recv(1024).decode().strip()
-    password = client_socket.recv(1024).decode().strip()
-
-    with get_database_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-        user = cursor.fetchone()
-
-        if cmd == "REGISTER":
-            if user:
-                client_socket.send(f"Username {username} is already taken. Please try a different username.".encode())
-                client_socket.close()
-                return
-            else:
-                # Hacher le mot de passe avant de l'enregistrer
-                hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-                cursor.execute("INSERT INTO users (username, password, ip_address) VALUES (%s, %s, %s)",
-                               (username, hashed_password, str(client_address)))
-                conn.commit()
-        elif user and bcrypt.checkpw(password.encode(), user[1].encode()):
+    ...
+    if cmd == "REGISTER":
+        if user:
+            client_socket.send(f"Username {username} is already taken. Please try a different username.".encode())
+            client_socket.close()
+            return
+        else:
+            # Hacher le mot de passe avant de l'enregistrer
+            hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+            cursor.execute("INSERT INTO users (username, password, ip_address, last_login) VALUES (%s, %s, %s, NOW())",
+                           (username, hashed_password, str(client_address[0])))
+            conn.commit()
+    elif cmd == "LOGIN":
+        if user and bcrypt.checkpw(password.encode(), user[1].encode()):
             # Connexion réussie
             client_socket.send("Login successful!".encode())
         else:
             client_socket.send("Invalid login credentials.".encode())
             client_socket.close()
             return
+    ...
+
 
     clients[username] = client_socket
     broadcast(f"{username} has joined the chat.", sender_username=username)

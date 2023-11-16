@@ -8,8 +8,8 @@ import time
 def get_database_connection():
     return mysql.connector.connect(
         host="localhost",         # ou l'adresse de votre serveur de base de données
-        user="admin", # l'utilisateur de la base de données
-        password="admin", # le mot de passe
+        user="root", # l'utilisateur de la base de données
+        password="root", # le mot de passe
         database="chat_server"    # le nom de la base de données
     )
 

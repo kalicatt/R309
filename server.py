@@ -8,7 +8,7 @@ import time
 def get_database_connection():
     return mysql.connector.connect(
         host="localhost",         # ou l'adresse de votre serveur de base de données
-        user="root", # l'utilisateur de la base de données
+        user="chatuser", # l'utilisateur de la base de données
         password="root", # le mot de passe
         database="chat_server"    # le nom de la base de données
     )
@@ -17,7 +17,7 @@ def get_database_connection():
 def initialize_database():
     conn = mysql.connector.connect(
         host="localhost",
-        user="root",
+        user="chatuser",
         password="root"
     )
     cursor = conn.cursor()

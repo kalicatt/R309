@@ -2,6 +2,7 @@ import socket
 import threading
 import mysql.connector
 import bcrypt
+import time
 
 # Fonction pour établir une connexion à la base de données MySQL
 def get_database_connection():

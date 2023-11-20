@@ -32,7 +32,7 @@ class ChatWindow(tk.Tk):
 
         self.message_var = tk.StringVar()
         self.message_entry = tk.Entry(self, textvariable=self.message_var)
-        self.message_entry.pack(padx=10, fill=tk.X)
+        self.message_entry.pack(padx=10, pady=10, fill=tk.X)
         self.message_entry.bind('<Return>', self.send_message)
 
         self.user_choice_dialog()
@@ -54,11 +54,10 @@ class ChatWindow(tk.Tk):
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect(('localhost', 50000))
 
-            if is_registering:
-                self.socket.send("REGISTER".encode())  # Send a special register command to the server
-
-            self.socket.send(username.encode())
-            self.socket.send(password.encode())
+            # Envoi des informations d'authentification au serveur
+            command = "REGISTER" if is_registering else "LOGIN"
+            credentials = f"{command} {username} {password}"
+            self.socket.send(credentials.encode())
 
             self.client_thread = ClientThread(self.socket, self.update_chat)
             self.client_thread.start()
@@ -70,6 +69,7 @@ class ChatWindow(tk.Tk):
         self.message_var.set('')
         if message:
             self.client_thread.send_message(message)
+            self.update_chat(f"moi : {message}")  # Affiche le message dans votre fenêtre de chat
 
     def update_chat(self, message):
         self.chat_log.config(state='normal')

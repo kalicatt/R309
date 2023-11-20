@@ -6,48 +6,59 @@ import time
 
 # Fonction pour établir une connexion à la base de données MySQL
 def get_database_connection():
-    return mysql.connector.connect(
-        host="localhost",         # ou l'adresse de votre serveur de base de données
-        user="chatuser", # l'utilisateur de la base de données
-        password="root", # le mot de passe
-        database="chat_server"    # le nom de la base de données
+    try:
+        return mysql.connector.connect(
+            host="localhost",         # ou l'adresse de votre serveur de base de données
+            user="chatuser", # l'utilisateur de la base de données
+            password="root", # le mot de passe
+            database="chat_server"    # le nom de la base de données
     )
+    except mysql.connector.Error as e:
+            print(f"Erreur de connexion à la base de données: {e}")
+            return None
 
 # Fonction pour initialiser la base de données et les tables
 def initialize_database():
-    conn = mysql.connector.connect(
-        host="localhost",
-        user="chatuser",
-        password="root"
-    )
-    cursor = conn.cursor()
-
-    cursor.execute("CREATE DATABASE IF NOT EXISTS chat_server")
-    cursor.execute("USE chat_server")
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(255) UNIQUE NOT NULL,
-            password VARCHAR(255) NOT NULL,
-            ip_address VARCHAR(255),
-            last_login DATETIME
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="chatuser",
+            password="root"
         )
-    """)
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            sender_id INT,
-            message TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (sender_id) REFERENCES users(id)
-        )
-    """)
+        cursor.execute("CREATE DATABASE IF NOT EXISTS chat_server")
+        cursor.execute("USE chat_server")
 
-    conn.commit()
-    cursor.close()
-    conn.close()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                ip_address VARCHAR(255),
+                last_login DATETIME
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                sender_id INT,
+                message TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sender_id) REFERENCES users(id)
+            )
+        """)
+
+        conn.commit()
+
+    except mysql.connector.Error as e:
+        print(f"Erreur lors de l'initialisation de la base de données: {e}")
+
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
 # Fonction pour hacher un mot de passe
 def hash_password(password):
@@ -75,6 +86,7 @@ def send_private_message(sender, message):
 # Fonction pour diffuser les messages à tous les clients
 # Correction dans la fonction broadcast
 def broadcast(message, sender_username=None):
+    print(f"Broadcasting message from {sender_username}: {message}")
     sender_id = None
     with get_database_connection() as conn:
         cursor = conn.cursor()
@@ -99,53 +111,60 @@ def broadcast(message, sender_username=None):
 # Fonction pour gérer chaque client connecté
 # Correction dans la fonction handle_client
 def handle_client(client_socket, client_address):
-    ...
-    if cmd == "REGISTER":
-        if user:
-            client_socket.send(f"Username {username} is already taken. Please try a different username.".encode())
-            client_socket.close()
-            return
-        else:
-            # Hacher le mot de passe avant de l'enregistrer
-            hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-            cursor.execute("INSERT INTO users (username, password, ip_address, last_login) VALUES (%s, %s, %s, NOW())",
-                           (username, hashed_password, str(client_address[0])))
-            conn.commit()
-    elif cmd == "LOGIN":
-        if user and bcrypt.checkpw(password.encode(), user[1].encode()):
-            # Connexion réussie
-            client_socket.send("Login successful!".encode())
-        else:
-            client_socket.send("Invalid login credentials.".encode())
-            client_socket.close()
-            return
-    ...
+    try:
+        # Recevoir le type de commande, le nom d'utilisateur et le mot de passe
+        cmd_info = client_socket.recv(1024).decode()
+        cmd, username, password = cmd_info.split(' ', 2)
+
+        with get_database_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, password FROM users WHERE username = %s", (username,))
+            user = cursor.fetchone()
+
+            if cmd == "REGISTER":
+                if user:
+                    client_socket.send(f"Username {username} is already taken. Please try a different username.".encode())
+                    return
+                else:
+                    # Hacher le mot de passe avant de l'enregistrer
+                    hashed_password = hash_password(password)
+                    cursor.execute("INSERT INTO users (username, password, ip_address, last_login) VALUES (%s, %s, %s, NOW())",
+                                   (username, hashed_password, str(client_address[0])))
+                    conn.commit()
+                    client_socket.send("Registration successful!".encode())
+
+            elif cmd == "LOGIN":
+                if user and verify_password(user[1], password):
+                    client_socket.send("Login successful!".encode())
+                else:
+                    client_socket.send("Invalid login credentials.".encode())
+                    return
+
+            # Ajout du client à la liste des clients connectés
+            clients[username] = client_socket
+            broadcast(f"{username} has joined the chat.", sender_username=username)
+
+            # Boucle pour gérer les messages entrants
+            while True:
+                message = client_socket.recv(1024).decode()
+                if not message or message.lower() == 'bye':
+                    broadcast(f"{username} has left the chat.", sender_username=username)
+                    break
+
+                if send_private_message(username, message):
+                    continue
+
+                broadcast(f"{username} says: {message}", sender_username=username)  
+
+    except ConnectionResetError:
+        pass
+    except Exception as e:
+        print(f"Error in handle_client: {e}")
+    finally:
+        client_socket.close()
+        del clients[username]        
 
 
-    clients[username] = client_socket
-    broadcast(f"{username} has joined the chat.", sender_username=username)
-
-    while True:
-        try:
-            message = client_socket.recv(1024).decode()
-            if not message or message.lower() == 'bye':
-                broadcast(f"{username} has left the chat.", sender_username=username)
-                break
-
-            if send_private_message(username, message):
-                continue
-
-            broadcast(f"{username} says: {message}", sender_username=username)
-
-        except ConnectionResetError:
-            break
-        except Exception as e:
-            print(f"Error: {e}")
-            break
-
-    print(f"Client {username} has disconnected.")
-    client_socket.close()
-    del clients[username]
 
 # Fonction pour les commandes du serveur
 def server_command():

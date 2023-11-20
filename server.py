@@ -78,7 +78,7 @@ def send_private_message(sender, message):
         parts = message.split(" ", 1)
         if len(parts) > 1 and parts[0][1:] in clients:
             destinataire = parts[0][1:]
-            msg_to_send = f"Private from {sender}: {parts[1]}"
+            msg_to_send = f"[PRIVATE] Private from {sender}: {parts[1]}"
             clients[destinataire].send(msg_to_send.encode())
             return True
     return False

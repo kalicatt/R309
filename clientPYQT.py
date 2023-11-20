@@ -1,6 +1,7 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QInputDialog
 from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QColor, QTextCursor
 import socket
 
 class ClientThread(QThread):
@@ -75,8 +76,18 @@ class ChatWindow(QWidget):
             self.client_thread.send_message(message)
 
     def update_chat(self, message):
-        print(f"Updating chat with: {message}")
-        self.chat_history.append(message)  # Append any message to the chat history
+    # Vérifiez si le message est un message privé
+        if "[PRIVATE]" in message:
+            self.chat_history.setTextColor(QColor('orange'))
+        else:
+            self.chat_history.setTextColor(QColor('black'))
+
+    # Ajoutez le message à l'historique de la discussion
+        self.chat_history.append(message)
+
+    # Réinitialiser la couleur pour le prochain message
+        self.chat_history.setTextColor(QColor('black'))
+
 
     def closeEvent(self, event):
         self.socket.close()

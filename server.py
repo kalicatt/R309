@@ -208,8 +208,10 @@ def handle_client(client_socket, client_address):
                 broadcast(f"{username} has disconnected.")
 
 
-
-
+def fictiousclient():
+    socketcli = socket.socket()
+    socketcli.connect(('localhost', 50000))
+    socketcli.close()
 
 # Fonction pour les commandes du serveur
 def server_command():
@@ -221,6 +223,7 @@ def server_command():
 
         if cmd == 'kill':
             broadcast("Server is shutting down now...")
+            fictiousclient()
             shutdown_flag.set()  # Déclenche l'arrêt du serveur
             break
         elif cmd == "ban":
@@ -253,8 +256,9 @@ def main():
             while not shutdown_flag.is_set():
                 client_socket, client_address = server_socket.accept()
                 print(f"Connection from {client_address}")
-                client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address),daemon=True)
-                client_thread.start()
+                if not shutdown_flag.is_set():
+                    client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address),daemon=True)
+                    client_thread.start()
         except Exception as e:
             print(f"Error accepting clients: {e}")
 

@@ -86,7 +86,7 @@ def send_private_message(sender, message):
 # Fonction pour diffuser les messages à tous les clients
 # Correction dans la fonction broadcast
 def broadcast(message, sender_username=None):
-    print(f"Broadcasting message : {message}")
+    print(f"(Broadcasting message) {message}")
     sender_id = None
     with get_database_connection() as conn:
         cursor = conn.cursor()

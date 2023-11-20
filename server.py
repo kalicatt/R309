@@ -84,7 +84,7 @@ def send_private_message(sender, message):
     return False
 
 # Fonction pour diffuser les messages à tous les clients
-# Correction dans la fonction broadcast
+
 def broadcast(message, sender_username=None):
     print(f"(Broadcasting message) {message}")
     sender_id = None
@@ -109,7 +109,7 @@ def broadcast(message, sender_username=None):
 
 
 # Fonction pour gérer chaque client connecté
-# Correction dans la fonction handle_client
+
 def handle_client(client_socket, client_address):
     try:
         # Recevoir le type de commande, le nom d'utilisateur et le mot de passe

@@ -14,8 +14,10 @@ class ClientThread(QThread):
         while True:
             try:
                 message = self.socket.recv(1024).decode()
+                print(f"Message received: {message}")
                 self.received_message.emit(message)
-            except:
+            except Exception as e:
+                print(f"Error receiving message: {e}")
                 break
 
     def send_message(self, message):
@@ -73,6 +75,7 @@ class ChatWindow(QWidget):
             self.client_thread.send_message(message)
 
     def update_chat(self, message):
+        print(f"Updating chat with: {message}")
         self.chat_history.append(message)  # Append any message to the chat history
 
     def closeEvent(self, event):

@@ -104,10 +104,12 @@ def send_private_message(sender, message):
         parts = message.split(" ", 1)
         if len(parts) > 1 and parts[0][1:] in clients:
             destinataire = parts[0][1:]
+            dest_socket, _ = clients[destinataire]  # Extraction du socket
             msg_to_send = f"Private from {sender}: {parts[1]}"
-            clients[destinataire].send(msg_to_send.encode())
+            dest_socket.send(msg_to_send.encode())
             return True
     return False
+
 
 # Fonction pour diffuser les messages à tous les clients
 
@@ -124,21 +126,23 @@ def broadcast(message, sender_username=None):
             cursor.execute("INSERT INTO messages (sender_id, message) VALUES (%s, %s)", (sender_id, message))
             conn.commit()
 
-    for username, sock in list(clients.items()):
+    for username, (client_socket, _) in clients.items():
         if username != sender_username:
             try:
-                sock.send(message.encode())
+                client_socket.send(message.encode())
             except Exception as e:
                 print(f"Error sending message to {username}: {e}")
-                sock.close()
+                client_socket.close()
                 del clients[username]
+
 
 
 # Fonction pour gérer chaque client connecté
 
 def handle_client(client_socket, client_address):
+    username = None  # Ajout pour capturer le nom d'utilisateur
     try:
-        while True:
+        while not shutdown_flag.is_set():
             cmd_info = client_socket.recv(1024).decode()
             if not cmd_info:
                 break
@@ -166,7 +170,7 @@ def handle_client(client_socket, client_address):
                 elif cmd == "LOGIN":
                     if user and verify_password(user[1], password):
                         # Vérifier si l'utilisateur est banni ou expulsé
-                        if client_address[0] in banned_ips or username in kicked_users and time.time() < kicked_users[username]:
+                        if client_address[0] in banned_ips or (username in kicked_users and time.time() < kicked_users[username]):
                             client_socket.send("You are banned or kicked from the server.".encode())
                             continue  # Permet à l'utilisateur de réessayer
 
@@ -181,10 +185,9 @@ def handle_client(client_socket, client_address):
         broadcast(f"{username} has joined the chat.", sender_username=username)
 
         # Gestion des messages entrants
-        while True:
+        while not shutdown_flag.is_set():
             message = client_socket.recv(1024).decode()
             if not message or message.lower() == 'bye':
-                broadcast(f"{username} has left the chat.", sender_username=username)
                 break
 
             if send_private_message(username, message):
@@ -197,10 +200,13 @@ def handle_client(client_socket, client_address):
     except Exception as e:
         print(f"Error in handle_client: {e}")
     finally:
+        # Fermeture du socket et suppression du client de la liste
         client_socket.close()
-        if username in clients:
+        if username and username in clients:
             del clients[username]
-            broadcast(f"{username} has disconnected.")
+            if not shutdown_flag.is_set():
+                broadcast(f"{username} has disconnected.")
+
 
 
 
@@ -247,7 +253,7 @@ def main():
             while not shutdown_flag.is_set():
                 client_socket, client_address = server_socket.accept()
                 print(f"Connection from {client_address}")
-                client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
+                client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address),daemon=True)
                 client_thread.start()
         except Exception as e:
             print(f"Error accepting clients: {e}")
@@ -256,7 +262,7 @@ def main():
     client_accept_thread.start()
 
     # Thread pour les commandes du serveur
-    command_thread = threading.Thread(target=server_command)
+    command_thread = threading.Thread(target=server_command, daemon=True)
     command_thread.start()
 
     # Attendre que les threads se terminent proprement

@@ -3,6 +3,7 @@ import threading
 import mysql.connector
 import bcrypt
 import time
+import errno
 
 # Fonction pour établir une connexion à la base de données MySQL
 def get_database_connection():
@@ -172,6 +173,7 @@ def handle_client(client_socket, client_address):
                         # Vérifier si l'utilisateur est banni ou expulsé
                         if client_address[0] in banned_ips or (username in kicked_users and time.time() < kicked_users[username]):
                             client_socket.send("You are banned or kicked from the server.".encode())
+                            client_socket.close()
                             continue  # Permet à l'utilisateur de réessayer
 
                         client_socket.send("Login successful!".encode())
@@ -197,6 +199,11 @@ def handle_client(client_socket, client_address):
 
     except ConnectionResetError:
         print(f"Connection reset by peer: {client_address}")
+    except socket.error as e:
+        if e.errno == errno.WSAECONNABORTED:
+            print(f"Connection aborted: {client_address}")
+        else:
+            print(f"Error in handle_client: {e}")
     except Exception as e:
         print(f"Error in handle_client: {e}")
     finally:
@@ -206,7 +213,7 @@ def handle_client(client_socket, client_address):
             del clients[username]
             if not shutdown_flag.is_set():
                 broadcast(f"{username} has disconnected.")
-
+    
 
 def fictiousclient():
     socketcli = socket.socket()
@@ -225,21 +232,50 @@ def server_command():
             broadcast("Server is shutting in 5 seconds...")
             time.sleep(5)
             broadcast("Server is shutting down now...")
-            fictiousclient()
             shutdown_flag.set()  # Déclenche l'arrêt du serveur
+            # Fermer toutes les connexions clients
+            for username, (client_socket, _) in clients.items():
+                client_socket.close()
             break
+
         elif cmd == "ban":
-                # Ban par nom d'utilisateur ou IP
-            ban_user(args[1])
+            if len(args) < 2:
+                print("Usage: ban <ip_address>")
+            else:
+                ban_user(args[1])
+                # Fermer la connexion pour l'utilisateur banni
+                for username, (client_socket, client_ip) in clients.items():
+                    if client_ip == args[1]:
+                        client_socket.close()
+                        del clients[username]
+                        break
+                print(f"Server has banned IP address {args[1]}")
+
         elif cmd == "unban":
-                # Unban par nom d'utilisateur ou IP
-            unban_user(args[1])
+            if len(args) < 2:
+                print("Usage: unban <ip_address>")
+            else:
+                unban_user(args[1])
+                print(f"Server has unbanned IP address {args[1]}")
+
         elif cmd == "kick":
-                # Kick par nom d'utilisateur avec durée
-            kick_user(args[1], int(args[2]))
+            if len(args) < 3:
+                print("Usage: kick <username> <duration_in_seconds>")
+            else:
+                kick_user(args[1], int(args[2]))
+                # Fermer la connexion pour l'utilisateur expulsé
+                if args[1] in clients:
+                    clients[args[1]][0].close()
+                    del clients[args[1]]
+                print(f"Server has kicked user {args[1]} for {args[2]} seconds")
+
         elif cmd == "unkick":
-                # Unkick par nom d'utilisateur
-            unkick_user(args[1])
+            if len(args) < 2:
+                print("Usage: unkick <username>")
+            else:
+                unkick_user(args[1])
+                print(f"Server has unkicked user {args[1]}")
+
 
 
 # Fonction principale du serveur

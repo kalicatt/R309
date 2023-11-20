@@ -24,7 +24,7 @@ class ClientThread(threading.Thread):
 class ChatWindow(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('Chat Client')
+        self.title('serveur discord')
         self.geometry('400x300')
 
         self.chat_log = scrolledtext.ScrolledText(self, state='disabled')

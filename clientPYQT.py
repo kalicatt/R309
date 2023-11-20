@@ -1,6 +1,5 @@
 import sys
-print(sys.executable)
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QInputDialog
 from PyQt5.QtCore import QThread, pyqtSignal
 import socket
 
@@ -27,11 +26,25 @@ class ChatWindow(QWidget):
         super().__init__()
         self.init_ui()
         self.socket = socket.socket()
-        self.socket.connect(('localhost', 50000))
-        self.client_thread = ClientThread(self.socket)
-        self.client_thread.received_message.connect(self.update_chat)
-        self.client_thread.start()
-        
+        self.connect_to_server()
+
+    def connect_to_server(self):
+        choice, okPressed = QInputDialog.getItem(self, "Get item", "Login (L) or Register (R)?", ["Login", "Register"], 0, False)
+        if okPressed and choice:
+            username, ok = QInputDialog.getText(self, 'Input Dialog', 'Enter your username:')
+            password, ok = QInputDialog.getText(self, 'Input Dialog', 'Enter your password:', QLineEdit.Password)
+            if ok:
+                self.socket.connect(('localhost', 50000))
+                cmd = "REGISTER" if choice == "Register" else "LOGIN"
+                credentials = f"{cmd} {username} {password}"
+                self.socket.send(credentials.encode())
+                self.client_thread = ClientThread(self.socket)
+                self.client_thread.received_message.connect(self.update_chat)
+                self.client_thread.start()
+            else:
+                self.close()
+        else:
+            self.close()
 
     def init_ui(self):
         self.chat_history = QTextEdit()

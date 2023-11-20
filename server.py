@@ -36,7 +36,7 @@ def initialize_database():
                 username VARCHAR(255) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL,
                 ip_address VARCHAR(255),
-                registered DATETIME
+                last_login DATETIME
             )
         """)
 
@@ -78,7 +78,7 @@ def send_private_message(sender, message):
         parts = message.split(" ", 1)
         if len(parts) > 1 and parts[0][1:] in clients:
             destinataire = parts[0][1:]
-            msg_to_send = f"[PRIVATE] Private from {sender}: {parts[1]}"
+            msg_to_send = f"Private from {sender}: {parts[1]}"
             clients[destinataire].send(msg_to_send.encode())
             return True
     return False
@@ -112,57 +112,64 @@ def broadcast(message, sender_username=None):
 
 def handle_client(client_socket, client_address):
     try:
-        # Recevoir le type de commande, le nom d'utilisateur et le mot de passe
-        cmd_info = client_socket.recv(1024).decode()
-        cmd, username, password = cmd_info.split(' ', 2)
+        while True:
+            cmd_info = client_socket.recv(1024).decode()
+            if not cmd_info:
+                break
 
-        with get_database_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, password FROM users WHERE username = %s", (username,))
-            user = cursor.fetchone()
+            cmd, username, password = cmd_info.split(' ', 2)
 
-            if cmd == "REGISTER":
-                if user:
-                    client_socket.send(f"Username {username} is already taken. Please try a different username.".encode())
-                    return
-                else:
-                    # Hacher le mot de passe avant de l'enregistrer
-                    hashed_password = hash_password(password)
-                    cursor.execute("INSERT INTO users (username, password, ip_address, last_login) VALUES (%s, %s, %s, NOW())",
-                                   (username, hashed_password, str(client_address[0])))
-                    conn.commit()
-                    client_socket.send("Registration successful!".encode())
+            with get_database_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, password FROM users WHERE username = %s", (username,))
+                user = cursor.fetchone()
 
-            elif cmd == "LOGIN":
-                if user and verify_password(user[1], password):
-                    client_socket.send("Login successful!".encode())
-                else:
-                    client_socket.send("Invalid login credentials.".encode())
-                    return
+                if cmd == "REGISTER":
+                    if user:
+                        client_socket.send("Username is already taken. Please try a different username.".encode())
+                        continue  # Permet à l'utilisateur de réessayer
+                    else:
+                        # Enregistrement de l'utilisateur
+                        hashed_password = hash_password(password)
+                        cursor.execute("INSERT INTO users (username, password, ip_address, last_login) VALUES (%s, %s, %s, NOW())",
+                                       (username, hashed_password, str(client_address[0])))
+                        conn.commit()
+                        client_socket.send("Registration successful!".encode())
+                        break  # Sortir de la boucle après un enregistrement réussi
 
-            # Ajout du client à la liste des clients connectés
-            clients[username] = client_socket
-            broadcast(f"{username} has joined the chat.", sender_username=username)
+                elif cmd == "LOGIN":
+                    if user and verify_password(user[1], password):
+                        client_socket.send("Login successful!".encode())
+                        break  # Sortir de la boucle après une connexion réussie
+                    else:
+                        client_socket.send("Invalid login credentials.".encode())
+                        continue  # Permet à l'utilisateur de réessayer
 
-            # Boucle pour gérer les messages entrants
-            while True:
-                message = client_socket.recv(1024).decode()
-                if not message or message.lower() == 'bye':
-                    broadcast(f"{username} has left the chat.", sender_username=username)
-                    break
+        # Ajout du client à la liste des clients connectés et gestion des messages
+        clients[username] = client_socket
+        broadcast(f"{username} has joined the chat.", sender_username=username)
 
-                if send_private_message(username, message):
-                    continue
+        # Gestion des messages entrants
+        while True:
+            message = client_socket.recv(1024).decode()
+            if not message or message.lower() == 'bye':
+                broadcast(f"{username} has left the chat.", sender_username=username)
+                break
 
-                broadcast(f"{username} says: {message}", sender_username=username)  
+            if send_private_message(username, message):
+                continue
+
+            broadcast(f"{username} says: {message}", sender_username=username)
 
     except ConnectionResetError:
-        pass
+        print(f"Connection reset by peer: {client_address}")
     except Exception as e:
         print(f"Error in handle_client: {e}")
     finally:
         client_socket.close()
-        del clients[username]        
+        if username in clients:
+            del clients[username]
+            broadcast(f"{username} has disconnected.")
 
 
 

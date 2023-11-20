@@ -48,6 +48,11 @@ class ChatWindow(QWidget):
                         self.client_thread.received_message.connect(self.update_chat)
                         self.client_thread.start()
                         break
+                    elif "banned" in response or "kicked" in response:
+                        QMessageBox.warning(self, "Access Denied", response)
+                        self.socket.close()
+                        self.close()
+                        break
                     else:
                         QMessageBox.warning(self, "Warning", response)
                 else:
@@ -56,6 +61,7 @@ class ChatWindow(QWidget):
             else:
                 self.close()
                 break
+
 
     def init_ui(self):
         self.chat_history = QTextEdit()

@@ -70,7 +70,33 @@ def verify_password(stored_password, provided_password):
 
 # Dictionnaire pour suivre les clients connectés
 clients = {}
+
+# Ensemble pour suivre les adresses IP bannies
+banned_ips = set()
+
+# Dictionnaire pour suivre les utilisateurs expulsés temporairement
+kicked_users = {}  # username: timestamp de fin d'expulsion
+
+
+
 shutdown_flag = threading.Event()
+
+#definition des commandes serveur
+
+def ban_user(ip_address):
+    banned_ips.add(ip_address)
+
+def unban_user(ip_address):
+    banned_ips.discard(ip_address)
+
+def kick_user(username, duration):
+    kicked_users[username] = time.time() + duration
+
+def unkick_user(username):
+    del kicked_users[username]
+
+
+
 
 # Fonction pour envoyer des messages privés
 def send_private_message(sender, message):
@@ -139,6 +165,11 @@ def handle_client(client_socket, client_address):
 
                 elif cmd == "LOGIN":
                     if user and verify_password(user[1], password):
+                        # Vérifier si l'utilisateur est banni ou expulsé
+                        if client_address[0] in banned_ips or username in kicked_users and time.time() < kicked_users[username]:
+                            client_socket.send("You are banned or kicked from the server.".encode())
+                            continue  # Permet à l'utilisateur de réessayer
+
                         client_socket.send("Login successful!".encode())
                         break  # Sortir de la boucle après une connexion réussie
                     else:
@@ -146,7 +177,7 @@ def handle_client(client_socket, client_address):
                         continue  # Permet à l'utilisateur de réessayer
 
         # Ajout du client à la liste des clients connectés et gestion des messages
-        clients[username] = client_socket
+        clients[username] = (client_socket, client_address[0])
         broadcast(f"{username} has joined the chat.", sender_username=username)
 
         # Gestion des messages entrants
@@ -173,19 +204,32 @@ def handle_client(client_socket, client_address):
 
 
 
+
 # Fonction pour les commandes du serveur
 def server_command():
+    global shutdown_flag
     while not shutdown_flag.is_set():
-        cmd = input("")
-        if cmd.lower() == 'arret':
-            broadcast("Server is shutting down in 5 seconds...")
-            time.sleep(5)
-            shutdown_flag.set()
-            broadcast("Server is now shutting down.")
-            print("Server shutdown initiated.")
-            for sock in clients.values():
-                sock.close()
+        cmd_input = input("Enter command: ")
+        args = cmd_input.split()
+        cmd = args[0].lower()
+
+        if cmd == 'kill':
+            broadcast("Server is shutting down now...")
+            shutdown_flag.set()  # Déclenche l'arrêt du serveur
             break
+        elif cmd == "ban":
+                # Ban par nom d'utilisateur ou IP
+            ban_user(args[1])
+        elif cmd == "unban":
+                # Unban par nom d'utilisateur ou IP
+            unban_user(args[1])
+        elif cmd == "kick":
+                # Kick par nom d'utilisateur avec durée
+            kick_user(args[1], int(args[2]))
+        elif cmd == "unkick":
+                # Unkick par nom d'utilisateur
+            unkick_user(args[1])
+
 
 # Fonction principale du serveur
 def main():
@@ -197,16 +241,36 @@ def main():
     server_socket.listen()
     print(f"Server is listening on {host}:{port}")
 
-    try:
-        while True:
-            client_socket, client_address = server_socket.accept()
-            print(f"Connection from {client_address}")
-            client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
-            client_thread.start()
-    except KeyboardInterrupt:
-        print("Server is shutting down.")
-    finally:
-        server_socket.close()
+    # Thread pour accepter les connexions clients
+    def accept_clients(server_socket):
+        try:
+            while not shutdown_flag.is_set():
+                client_socket, client_address = server_socket.accept()
+                print(f"Connection from {client_address}")
+                client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
+                client_thread.start()
+        except Exception as e:
+            print(f"Error accepting clients: {e}")
+
+    client_accept_thread = threading.Thread(target=accept_clients, args=(server_socket,))
+    client_accept_thread.start()
+
+    # Thread pour les commandes du serveur
+    command_thread = threading.Thread(target=server_command)
+    command_thread.start()
+
+    # Attendre que les threads se terminent proprement
+    client_accept_thread.join()
+    command_thread.join()
+
+    # Fermer tous les sockets clients
+    for _, (client_socket, _) in clients.items():
+        client_socket.close()
+
+    # Fermer le socket serveur
+    server_socket.close()
+    print("Server has been shut down.")
 
 if __name__ == '__main__':
     main()
+

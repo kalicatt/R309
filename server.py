@@ -222,6 +222,8 @@ def server_command():
         cmd = args[0].lower()
 
         if cmd == 'kill':
+            broadcast("Server is shutting in 5 seconds...")
+            time.sleep(5)
             broadcast("Server is shutting down now...")
             fictiousclient()
             shutdown_flag.set()  # Déclenche l'arrêt du serveur

@@ -1,8 +1,8 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QInputDialog, QMessageBox, QListWidget
-from PyQt5.QtCore import QThread, pyqtSignal
 import socket
 import json
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QInputDialog, QMessageBox, QListWidget
+from PyQt5.QtCore import QThread, pyqtSignal
 
 class ClientThread(QThread):
     received_message = pyqtSignal(str)
@@ -21,8 +21,6 @@ class ClientThread(QThread):
                         data = json.loads(message)
                         if data["type"] == "user_list":
                             self.updated_user_list.emit(data["users"])
-                        else:
-                            self.received_message.emit(message)
                     except json.JSONDecodeError:
                         self.received_message.emit(message)
             except Exception as e:
@@ -40,8 +38,7 @@ class ChatWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.init_ui()
-        self.socket = socket.socket()
-        self.is_connected = False
+        self.socket = None
         self.connect_to_server()
 
     def init_ui(self):
@@ -71,33 +68,43 @@ class ChatWindow(QWidget):
             self.user_list_widget.addItem(user)
 
     def connect_to_server(self):
-        while not self.is_connected:
+        server_ip, ok1 = QInputDialog.getText(self, 'Server IP', 'Enter server IP:', text='localhost')
+        server_port, ok2 = QInputDialog.getInt(self, 'Server Port', 'Enter server port:', value=50000)
+        
+        if ok1 and ok2:
+            self.socket = socket.socket()
+            try:
+                self.socket.connect((server_ip, server_port))
+                self.authenticate_user()  # Séparation de la logique d'authentification
+            except socket.error as e:
+                QMessageBox.critical(self, "Connection Error", f"Unable to connect to the server: {e}")
+                self.close()
+
+    def authenticate_user(self):
+        while True:
             choice, okPressed = QInputDialog.getItem(self, "Get item", "Login (L) or Register (R)?", ["Login", "Register"], 0, False)
             if okPressed and choice:
                 username, ok = QInputDialog.getText(self, 'Input Dialog', 'Enter your username:')
                 password, ok = QInputDialog.getText(self, 'Input Dialog', 'Enter your password:', QLineEdit.Password)
                 if ok:
-                    try:
-                        self.socket.connect(('localhost', 50000))
-                        cmd = "REGISTER" if choice == "Register" else "LOGIN"
-                        credentials = f"{cmd} {username} {password}"
-                        self.socket.send(credentials.encode())
+                    cmd = "REGISTER" if choice == "Register" else "LOGIN"
+                    credentials = f"{cmd} {username} {password}"
+                    self.socket.send(credentials.encode())
 
-                        response = self.socket.recv(1024).decode()
-                        if response == "Registration successful!" or response == "Login successful!":
-                            self.client_thread = ClientThread(self.socket)
-                            self.client_thread.received_message.connect(self.update_chat)
-                            self.client_thread.updated_user_list.connect(self.update_user_list)
-                            self.client_thread.start()
-                            self.is_connected = True
-                        elif "banned" in response or "kicked" in response:
-                            QMessageBox.warning(self, "Access Denied", response)
-                            break
-                        else:
-                            QMessageBox.warning(self, "Warning", response)
-                    except socket.error as e:
-                        QMessageBox.critical(self, "Connection Error", f"Unable to connect to the server: {e}")
+                    response = self.socket.recv(1024).decode()
+                    if response == "Registration successful!" or response == "Login successful!":
+                        self.client_thread = ClientThread(self.socket)
+                        self.client_thread.received_message.connect(self.update_chat)
+                        self.client_thread.updated_user_list.connect(self.update_user_list)
+                        self.client_thread.start()
                         break
+                    elif "banned" in response or "kicked" in response:
+                        QMessageBox.warning(self, "Access Denied", response)
+                        break
+                    else:
+                        QMessageBox.warning(self, "Warning", response)
+                else:
+                    break
             else:
                 break
 
@@ -112,7 +119,7 @@ class ChatWindow(QWidget):
         self.chat_history.append(message)
 
     def closeEvent(self, event):
-        if self.is_connected:
+        if self.socket:
             self.client_thread.stop()
             self.socket.close()
         super().closeEvent(event)

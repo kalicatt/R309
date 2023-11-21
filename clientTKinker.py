@@ -1,89 +1,103 @@
+import sys
 import socket
+import json
 import threading
-import tkinter as tk
-from tkinter import simpledialog, messagebox, scrolledtext
+from tkinter import Tk, Text, Button, Entry, Listbox, END, messagebox, simpledialog
 
-class ClientThread(threading.Thread):
-    def __init__(self, socket, update_chat_callback):
-        super().__init__()
-        self.socket = socket
-        self.update_chat_callback = update_chat_callback
-        self.daemon = True
+class ClientApp:
+    def __init__(self, root):
+        self.root = root
+        root.title("Chat Client")
+        root.geometry("400x300")
 
-    def run(self):
-        while True:
+        self.chat_history = Text(root, state='disabled', height=12)
+        self.chat_history.pack()
+
+        self.message_box = Entry(root)
+        self.message_box.pack()
+        self.message_box.bind("<Return>", self.send_message)
+
+        self.send_button = Button(root, text='Envoyer', command=self.send_message)
+        self.send_button.pack()
+
+        self.user_list_widget = Listbox(root)
+        self.user_list_widget.pack()
+
+        self.socket = socket.socket()
+        self.is_connected = False
+        self.connect_to_server()
+
+    def connect_to_server(self):
+        choice = simpledialog.askstring("Get item", "Login (L) or Register (R)?")
+        if choice and choice.lower() in ['l', 'r']:
+            username = simpledialog.askstring('Input Dialog', 'Enter your username:')
+            password = simpledialog.askstring('Input Dialog', 'Enter your password:', show='*')
+            if username and password:
+                try:
+                    self.socket.connect(('localhost', 50000))
+                    cmd = "REGISTER" if choice.lower() == 'r' else "LOGIN"
+                    credentials = f"{cmd} {username} {password}"
+                    self.socket.send(credentials.encode())
+
+                    response = self.socket.recv(1024).decode()
+                    if "successful" in response:
+                        self.is_connected = True
+                        threading.Thread(target=self.receive_messages, daemon=True).start()
+                    else:
+                        messagebox.showwarning("Warning", response)
+                except socket.error as e:
+                    messagebox.showerror("Connection Error", f"Unable to connect to the server: {e}")
+            else:
+                self.root.destroy()
+        else:
+            self.root.destroy()
+
+    def receive_messages(self):
+        while self.is_connected:
             try:
                 message = self.socket.recv(1024).decode()
-                self.update_chat_callback(message)
-            except:
+                if message:
+                    try:
+                        data = json.loads(message)
+                        if data["type"] == "user_list":
+                            self.root.after(0, self.update_user_list, data["users"])
+                        else:
+                            self.root.after(0, self.update_chat, message)
+                    except json.JSONDecodeError:
+                        self.root.after(0, self.update_chat, message)
+            except Exception as e:
+                print(f"Error receiving message: {e}")
                 break
 
-    def send_message(self, message):
-        self.socket.send(message.encode())
-
-class ChatWindow(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title('serveur discord')
-        self.geometry('400x300')
-
-        self.chat_log = scrolledtext.ScrolledText(self, state='disabled')
-        self.chat_log.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-
-        self.message_var = tk.StringVar()
-        self.message_entry = tk.Entry(self, textvariable=self.message_var)
-        self.message_entry.pack(padx=10, pady=10, fill=tk.X)
-        self.message_entry.bind('<Return>', self.send_message)
-
-        self.user_choice_dialog()
-
-    def user_choice_dialog(self):
-        choice = simpledialog.askstring("Choice", "Login (L) or Register (R)?", parent=self)
-        if choice and choice.lower() == 'l':
-            self.connect_to_server(False)  # False for login
-        elif choice and choice.lower() == 'r':
-            self.connect_to_server(True)   # True for register
-        else:
-            self.destroy()
-
-    def connect_to_server(self, is_registering):
-        username = simpledialog.askstring("Username", "Enter your username", parent=self)
-        password = simpledialog.askstring("Password", "Enter your password", parent=self, show='*')
-
-        if username and password:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.connect(('localhost', 50000))
-
-            # Envoi des informations d'authentification au serveur
-            command = "REGISTER" if is_registering else "LOGIN"
-            credentials = f"{command} {username} {password}"
-            self.socket.send(credentials.encode())
-
-            self.client_thread = ClientThread(self.socket, self.update_chat)
-            self.client_thread.start()
-        else:
-            self.destroy()
-
     def send_message(self, event=None):
-        message = self.message_var.get()
-        self.message_var.set('')
-        if message:
-            self.client_thread.send_message(message)
-            self.update_chat(f"moi : {message}")  # Affiche le message dans votre fenêtre de chat
+        message = self.message_box.get()
+        self.message_box.delete(0, END)
+        if message and self.is_connected:
+            try:
+                self.socket.send(message.encode())
+                self.update_chat(f"Moi: {message}")
+            except socket.error as e:
+                messagebox.showerror("Sending Error", f"Unable to send the message: {e}")
 
     def update_chat(self, message):
-        self.chat_log.config(state='normal')
-        self.chat_log.insert('end', message + '\n')
-        self.chat_log.config(state='disabled')
-        self.chat_log.yview('end')
+        self.chat_history.config(state='normal')
+        self.chat_history.insert(END, message + '\n')
+        self.chat_history.config(state='disabled')
+        self.chat_history.see(END)
+
+    def update_user_list(self, user_list):
+        self.user_list_widget.delete(0, END)
+        for user in user_list:
+            self.user_list_widget.insert(END, user)
 
     def on_closing(self):
         if messagebox.askokcancel("Quit", "Do you want to quit?"):
-            self.socket.close()
-            self.client_thread.join()
-            self.destroy()
+            if self.is_connected:
+                self.socket.close()
+            self.root.destroy()
 
 if __name__ == '__main__':
-    app = ChatWindow()
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
-    app.mainloop()
+    root = Tk()
+    app = ClientApp(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    root.mainloop()

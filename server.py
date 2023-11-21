@@ -4,6 +4,7 @@ import mysql.connector
 import bcrypt
 import time
 import errno
+import json
 
 # Fonction pour établir une connexion à la base de données MySQL
 def get_database_connection():
@@ -96,7 +97,16 @@ def kick_user(username, duration):
 def unkick_user(username):
     del kicked_users[username]
 
+def get_connected_users():
+    return list(clients.keys())
 
+def broadcast_user_list():
+    connected_users = get_connected_users()
+    for _, (client_socket, _) in clients.items():
+        try:
+            client_socket.send(json.dumps({"type": "user_list", "users": connected_users}).encode())
+        except Exception as e:
+            print(f"Error sending user list: {e}")
 
 
 # Fonction pour envoyer des messages privés
@@ -185,6 +195,7 @@ def handle_client(client_socket, client_address):
         # Ajout du client à la liste des clients connectés et gestion des messages
         clients[username] = (client_socket, client_address[0])
         broadcast(f"{username} has joined the chat.", sender_username=username)
+        broadcast_user_list()
 
         # Gestion des messages entrants
         while not shutdown_flag.is_set():
@@ -208,12 +219,12 @@ def handle_client(client_socket, client_address):
         print(f"Error in handle_client: {e}")
     finally:
         # Fermeture du socket et suppression du client de la liste
-        client_socket.close()
         if username and username in clients:
             del clients[username]
+            broadcast_user_list()
             if not shutdown_flag.is_set():
                 broadcast(f"{username} has disconnected.")
-    
+        client_socket.close()
 
 def fictiousclient():
     socketcli = socket.socket()

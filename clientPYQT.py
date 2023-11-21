@@ -1,11 +1,13 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QInputDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QInputDialog, QMessageBox, QListWidget
 from PyQt5.QtCore import QThread, pyqtSignal
 import socket
+import json
 
 class ClientThread(QThread):
     received_message = pyqtSignal(str)
-
+    updated_user_list = pyqtSignal(list)
+    
     def __init__(self, socket):
         super().__init__()
         self.socket = socket
@@ -14,8 +16,16 @@ class ClientThread(QThread):
         while True:
             try:
                 message = self.socket.recv(1024).decode()
-                print(f"Message received: {message}")
-                self.received_message.emit(message)
+                if message:
+                    try:
+                        data = json.loads(message)
+                        if data["type"] == "user_list":
+                            self.updated_user_list.emit(data["users"])  # Envoyer la liste au GUI
+                        else:
+                            print(f"Message received: {message}")
+                            self.received_message.emit(message)  # Traitement normal des autres messages
+                    except json.JSONDecodeError:
+                        self.received_message.emit(message)  # Traitement normal pour les messages non-JSON
             except Exception as e:
                 print(f"Error receiving message: {e}")
                 break
@@ -29,6 +39,15 @@ class ChatWindow(QWidget):
         self.init_ui()
         self.socket = socket.socket()
         self.connect_to_server()
+        self.user_list_widget = QListWidget(self)  # Créer un QListWidget pour les utilisateurs
+        self.layout().addWidget(self.user_list_widget)  # Ajouter à la mise en page
+        self.client_thread = ClientThread(self.socket)
+        self.client_thread.updated_user_list.connect(self.update_user_list)  # Connecter le signal
+
+    def update_user_list(self, user_list):
+        self.user_list_widget.clear()
+        for user in user_list:
+            self.user_list_widget.addItem(user)
 
     def connect_to_server(self):
         while True:

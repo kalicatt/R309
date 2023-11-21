@@ -1,59 +1,59 @@
 import socket
 import threading
-import sys
+import json
 
-# Flag de fermeture pour indiquer aux threads de s'arrêter
-close_flag = threading.Event()
-
-def send_messages(server_socket):
-    while not close_flag.is_set():
+def receive_messages(sock):
+    while True:
         try:
-            message = input("Enter your message: ")
-            if message.lower() == 'bye':
-                close_flag.set()
-                server_socket.send(message.encode())
-                break
-            else:
-                server_socket.send(message.encode())
-        except BrokenPipeError:
-            break
-
-def receive_messages(server_socket):
-    while not close_flag.is_set():
-        try:
-            message = server_socket.recv(1024).decode()
+            message = sock.recv(1024).decode()
             if message:
-                print(f"\n{message}")
-            else:
-                # Si aucun message n'est reçu, cela signifie que le serveur a fermé la connexion.
-                close_flag.set()
-                break
-        except ConnectionResetError:
-            # Si le serveur se ferme brusquement, un ConnectionResetError sera levé.
-            print("\nServer disconnected abruptly")
-            close_flag.set()
+                try:
+                    data = json.loads(message)
+                    if data["type"] == "user_list":
+                        print("Utilisateurs connectés :", ', '.join(data["users"]))
+                    else:
+                        print(message)
+                except json.JSONDecodeError:
+                    print(message)
+        except Exception as e:
+            print(f"Erreur lors de la réception du message : {e}")
             break
 
 def main():
     host = 'localhost'
     port = 50000
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    server_socket = socket.socket()
-    server_socket.connect((host, port))
+    try:
+        sock.connect((host, port))
+    except Exception as e:
+        print(f"Impossible de se connecter au serveur : {e}")
+        return
 
-    # Threads pour gérer l'envoi et la réception des messages
-    send_thread = threading.Thread(target=send_messages, args=(server_socket,))
-    receive_thread = threading.Thread(target=receive_messages, args=(server_socket,))
+    choice = input("Login (L) or Register (R)? ").strip().lower()
+    username = input("Entrez votre nom d'utilisateur : ").strip()
+    password = input("Entrez votre mot de passe : ").strip()
 
-    receive_thread.start()
-    send_thread.start()
+    cmd = "REGISTER" if choice == 'r' else "LOGIN"
+    credentials = f"{cmd} {username} {password}"
+    sock.send(credentials.encode())
 
-    # Attendre que les threads se terminent proprement
-    send_thread.join()
-    receive_thread.join()
+    response = sock.recv(1024).decode()
+    print(response)
 
-    print("Disconnected from the chat server.")
-    server_socket.close()
+    if "successful" not in response:
+        sock.close()
+        return
 
-if __name__ == '__main__':
+    threading.Thread(target=receive_messages, args=(sock,), daemon=True).start()
+
+    while True:
+        message = input()
+        if message.lower() == 'quit':
+            break
+        sock.send(message.encode())
+
+    sock.close()
+
+if __name__ == "__main__":
     main()

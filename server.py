@@ -52,6 +52,25 @@ def initialize_database():
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rooms (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) UNIQUE NOT NULL,
+                is_private BOOLEAN NOT NULL DEFAULT FALSE
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS room_members (
+                room_id INT,
+                user_id INT,
+                is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+                FOREIGN KEY (room_id) REFERENCES rooms(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
+
         conn.commit()
 
     except mysql.connector.Error as e:

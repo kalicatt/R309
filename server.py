@@ -10,9 +10,9 @@ import json
 def get_database_connection():
     try:
         return mysql.connector.connect(
-            host="localhost",         # ou l'adresse de votre serveur de base de données
-            user="chatuser", # l'utilisateur de la base de données
-            password="root", # le mot de passe
+            host="localhost",   # ou l'adresse de votre serveur de base de données
+            user="chatuser",    # l'utilisateur de la base de données
+            password="root",    # le mot de passe
             database="chat_server"    # le nom de la base de données
     )
     except mysql.connector.Error as e:

@@ -170,62 +170,83 @@ def broadcast(message, sender_username=None):
 # Fonction pour gérer chaque client connecté
 
 def handle_client(client_socket, client_address):
-    username = None  # Ajout pour capturer le nom d'utilisateur
+    global usernames
     try:
+        username = None  # Ajout pour capturer le nom d'utilisateur
         while not shutdown_flag.is_set():
             cmd_info = client_socket.recv(1024).decode()
             if not cmd_info:
                 break
 
-            cmd, username, password = cmd_info.split(' ', 2)
+            cmd, username_requested, salon_name = cmd_info.split(' ', 2)
 
             with get_database_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT id, password FROM users WHERE username = %s", (username,))
-                user = cursor.fetchone()
 
                 if cmd == "REGISTER":
-                    if user:
+                    # Vérification si le nom d'utilisateur existe déjà
+                    cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+                    result = cursor.fetchone()
+                    if result:
                         client_socket.send("Username is already taken. Please try a different username.".encode())
                         continue  # Permet à l'utilisateur de réessayer
                     else:
                         # Enregistrement de l'utilisateur
                         hashed_password = hash_password(password)
                         cursor.execute("INSERT INTO users (username, password, ip_address, last_login) VALUES (%s, %s, %s, NOW())",
-                                       (username, hashed_password, str(client_address[0])))
+                                        (username, hashed_password, str(client_address[0])))
                         conn.commit()
                         client_socket.send("Registration successful!".encode())
                         break  # Sortir de la boucle après un enregistrement réussi
 
                 elif cmd == "LOGIN":
-                    if user and verify_password(user[1], password):
-                        # Vérifier si l'utilisateur est banni ou expulsé
-                        if client_address[0] in banned_ips or (username in kicked_users and time.time() < kicked_users[username]):
-                            client_socket.send("You are banned or kicked from the server.".encode())
-                            client_socket.close()
-                            continue  # Permet à l'utilisateur de réessayer
-
-                        client_socket.send("Login successful!".encode())
-                        break  # Sortir de la boucle après une connexion réussie
-                    else:
-                        client_socket.send("Invalid login credentials.".encode())
+                    # Vérification si le nom d'utilisateur existe
+                    cursor.execute("SELECT id, password FROM users WHERE username = %s", (username,))
+                    user = cursor.fetchone()
+                    if not user:
+                        client_socket.send("Invalid username.".encode())
                         continue  # Permet à l'utilisateur de réessayer
+                    else:
+                        # Vérification du mot de passe
+                        if not verify_password(user[1], password):
+                            client_socket.send("Invalid login credentials.".encode())
+                            continue  # Permet à l'utilisateur de réessayer
+                        else:
+                            # Connexion réussie
+                            username = user[0]
+                            broadcast(f"{username} a rejoint le chat.", sender_username=username)
+                            broadcast_user_list()
+                            break  # Sortir de la boucle après une connexion réussie
 
-        # Ajout du client à la liste des clients connectés et gestion des messages
-        clients[username] = (client_socket, client_address[0])
-        broadcast(f"{username} has joined the chat.", sender_username=username)
-        broadcast_user_list()
+                # Ajout du client à la liste des clients connectés et gestion des messages
+                if username:
+                    clients[username] = (client_socket, client_address[0])
 
-        # Gestion des messages entrants
-        while not shutdown_flag.is_set():
-            message = client_socket.recv(1024).decode()
-            if not message or message.lower() == 'bye':
-                break
+                # Gestion des messages entrants
+                while not shutdown_flag.is_set():
+                    message = client_socket.recv(1024).decode()
+                    if not message or message.lower() == 'bye':
+                        break
 
-            if send_private_message(username, message):
-                continue
+                    if send_private_message(username, message):
+                        continue
 
-            broadcast(f"{username} says: {message}", sender_username=username)
+                    # Vérifier si l'utilisateur souhaite rejoindre un salon
+                    if message.startswith("JOIN_SALON "):
+                        username_requested, salon_name = message.split(" ", 1)
+                        if username_requested != username:
+                            broadcast(f"{username} demande à {username_requested} de rejoindre le salon {salon_name}.", sender_username=username)
+                            broadcast(f"{username_requested} souhaite rejoindre le salon {salon_name}.", sender_username=username_requested)
+                            client_socket.send(json.dumps({"type": "join_request", "sender": username, "salon_name": salon_name}).encode())
+                    elif message.startswith("ACCEPT_JOIN "):
+                        username_requested, salon_name = message.split(" ", 1)
+                        if username not in usernames:
+                            continue
+                        if sender_username != username:
+                            broadcast(f"{username} accepte la demande de {username_requested} de rejoindre le salon {salon_name}.", sender_username=username)
+                            broadcast(f"{username_requested} rejoint le salon {salon_name}.")
+                                      
+                        broadcast(f"{username} says: {message}", sender_username=username)
 
     except ConnectionResetError:
         print(f"Connection reset by peer: {client_address}")

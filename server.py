@@ -29,9 +29,11 @@ def initialize_database():
         )
         cursor = conn.cursor()
 
+        # Créer la base de données si elle n'existe pas
         cursor.execute("CREATE DATABASE IF NOT EXISTS chat_server")
         cursor.execute("USE chat_server")
 
+        # Créer les tables si elles n'existent pas
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -59,17 +61,32 @@ def initialize_database():
                 is_private BOOLEAN NOT NULL DEFAULT FALSE
             )
         """)
-        
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS room_members (
                 room_id INT,
                 user_id INT,
                 is_approved BOOLEAN NOT NULL DEFAULT FALSE,
                 FOREIGN KEY (room_id) REFERENCES rooms(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                PRIMARY KEY (room_id, user_id)
             )
         """)
 
+        # Insérer les salons par défaut
+        default_rooms = [
+            ('Général', False),
+            ('Blabla', False),
+            ('Comptabilité', True),
+            ('Informatique', True),
+            ('Marketing', True)
+        ]
+
+        for room_name, is_private in default_rooms:
+            cursor.execute("SELECT id FROM rooms WHERE name = %s", (room_name,))
+            room = cursor.fetchone()
+            if not room:
+                cursor.execute("INSERT INTO rooms (name, is_private) VALUES (%s, %s)", (room_name, is_private))
 
         conn.commit()
 
@@ -80,6 +97,7 @@ def initialize_database():
         if conn:
             cursor.close()
             conn.close()
+
 
 # Fonction pour hacher un mot de passe
 def hash_password(password):

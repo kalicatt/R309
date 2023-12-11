@@ -1,7 +1,9 @@
 import sys
 import socket
 import json
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLineEdit, QInputDialog, QMessageBox, QListWidget
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
+                             QPushButton, QTextEdit, QLineEdit, QInputDialog, 
+                             QMessageBox, QListWidget, QComboBox)
 from PyQt5.QtCore import QThread, pyqtSignal
 
 class ClientThread(QThread):
@@ -64,6 +66,35 @@ class ChatWindow(QWidget):
         self.setWindowTitle('Chat Client')
         self.resize(400, 300)
 
+                # Ajout d'un widget pour sélectionner des salons
+        self.room_select = QComboBox(self)
+        self.room_select.addItem("Général")
+        self.room_select.addItem("Blabla")
+        self.room_select.addItem("Comptabilité")
+        self.room_select.addItem("Informatique")
+        self.room_select.addItem("Marketing")
+
+        self.join_room_button = QPushButton('Rejoindre le salon', self)
+        self.join_room_button.clicked.connect(self.join_room)
+
+        self.leave_room_button = QPushButton('Quitter le salon', self)
+        self.leave_room_button.clicked.connect(self.leave_room)
+
+        # Ajout des boutons et du sélecteur de salon à la disposition
+        room_layout = QHBoxLayout()
+        room_layout.addWidget(self.room_select)
+        room_layout.addWidget(self.join_room_button)
+        room_layout.addWidget(self.leave_room_button)
+        layout.addLayout(room_layout)
+
+    def join_room(self):
+        room_name = self.room_select.currentText()
+        self.send_message(f"/join {room_name}")
+
+    def leave_room(self):
+        if self.current_room:
+            self.send_message(f"/leave {self.current_room}")
+
     def update_user_list(self, user_list):
         self.user_list_widget.clear()
         for user in user_list:
@@ -110,15 +141,37 @@ class ChatWindow(QWidget):
             else:
                 break
 
-    def send_message(self):
-        message = self.message_box.text()
+    
+    def send_message(self, message=None):
+        if message is None:
+            message = self.message_box.text()
         self.message_box.clear()
         if message:
             self.update_chat(f"Moi: {message}")
             self.client_thread.send_message(message)
 
+
     def update_chat(self, message):
-        self.chat_history.append(message)
+        # Gérer la mise à jour des onglets de chat pour différents salons
+        if message.startswith("Vous avez rejoint le salon"):
+            room_name = message.split(":")[1].strip()
+            if room_name not in self.rooms:
+                self.rooms[room_name] = QTextEdit()
+                self.rooms[room_name].setReadOnly(True)
+                self.tab_widget.addTab(self.rooms[room_name], room_name)
+            self.current_room = room_name
+        elif message.startswith("Vous avez quitté le salon"):
+            room_name = message.split(":")[1].strip()
+            if room_name in self.rooms:
+                index = self.tab_widget.indexOf(self.rooms[room_name])
+                self.tab_widget.removeTab(index)
+                del self.rooms[room_name]
+                self.current_room = None
+        else:
+            if self.current_room and self.current_room in self.rooms:
+                self.rooms[self.current_room].append(message)
+            else:
+                self.chat_history.append(message)
 
     def closeEvent(self, event):
         if self.socket:

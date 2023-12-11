@@ -39,6 +39,8 @@ class ChatWindow(QWidget):
         super().__init__()
         self.init_ui()
         self.socket = None
+        self.current_room = None
+        self.rooms = {}  # Dictionnaire pour stocker les onglets de chat des salons
         self.connect_to_server()
 
     def init_ui(self):

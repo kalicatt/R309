@@ -146,6 +146,71 @@ def broadcast_user_list():
             print(f"Error sending user list: {e}")
 
 
+def join_room(cursor, username, room_name):
+    # Recherchez l'ID de l'utilisateur
+    cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+    user_id = cursor.fetchone()[0]
+    
+    # Recherchez l'ID du salon
+    cursor.execute("SELECT id, is_private FROM rooms WHERE name = %s", (room_name,))
+    room = cursor.fetchone()
+    
+    if room:
+        room_id, is_private = room
+        # Vérifiez si l'utilisateur est déjà membre du salon
+        cursor.execute("SELECT * FROM room_members WHERE room_id = %s AND user_id = %s", (room_id, user_id))
+        if cursor.fetchone():
+            return "You are already a member of this room."
+        
+        # Si le salon est privé, l'utilisateur doit être approuvé
+        if is_private:
+            cursor.execute("INSERT INTO room_members (room_id, user_id, is_approved) VALUES (%s, %s, FALSE)", (room_id, user_id))
+            return "Request to join the room has been sent and is pending approval."
+        else:
+            cursor.execute("INSERT INTO room_members (room_id, user_id, is_approved) VALUES (%s, %s, TRUE)", (room_id, user_id))
+            return "You have joined the room."
+    else:
+        return "Room does not exist."
+
+def leave_room(cursor, username, room_name):
+    # Recherchez l'ID de l'utilisateur
+    cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+    user_id = cursor.fetchone()[0]
+    
+    # Recherchez l'ID du salon
+    cursor.execute("SELECT id FROM rooms WHERE name = %s", (room_name,))
+    room = cursor.fetchone()
+    
+    if room:
+        room_id = room[0]
+        cursor.execute("DELETE FROM room_members WHERE room_id = %s AND user_id = %s", (room_id, user_id))
+        return "You have left the room."
+    else:
+        return "Room does not exist."
+
+def send_room_message(cursor, username, room_name, message):
+    # Recherchez l'ID de l'utilisateur
+    cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+    user_id = cursor.fetchone()[0]
+    
+    # Recherchez l'ID du salon
+    cursor.execute("SELECT id FROM rooms WHERE name = %s", (room_name,))
+    room = cursor.fetchone()
+    
+    if room:
+        room_id = room[0]
+        # Vérifiez si l'utilisateur est membre du salon
+        cursor.execute("SELECT * FROM room_members WHERE room_id = %s AND user_id = %s AND is_approved = TRUE", (room_id, user_id))
+        if not cursor.fetchone():
+            return "You are not a member of this room or your request has not been approved yet."
+        
+        # Insérez le message dans la table des messages
+        cursor.execute("INSERT INTO messages (sender_id, message, room_id) VALUES (%s, %s, %s)", (user_id, message, room_id))
+        return f"Message sent to room: {room_name}"
+    else:
+        return "Room does not exist."
+
+
 # Fonction pour envoyer des messages privés
 def send_private_message(sender, message):
     if message.startswith("@"):
@@ -237,13 +302,32 @@ def handle_client(client_socket, client_address):
         # Gestion des messages entrants
         while not shutdown_flag.is_set():
             message = client_socket.recv(1024).decode()
-            if not message or message.lower() == 'bye':
-                break
 
-            if send_private_message(username, message):
-                continue
+            # Traitement des commandes pour les salons
+            if message.startswith('/join'):
+                _, room_name = message.split()
+                response = join_room(cursor, username, room_name)
+                client_socket.send(response.encode())
 
-            broadcast(f"{username} says: {message}", sender_username=username)
+            elif message.startswith('/leave'):
+                _, room_name = message.split()
+                response = leave_room(cursor, username, room_name)
+                client_socket.send(response.encode())
+
+            elif message.startswith('/msg'):
+                _, room_name, room_message = message.split(' ', 2)
+                response = send_room_message(cursor, username, room_name, room_message)
+                client_socket.send(response.encode())
+
+            # Traitement des messages normaux et privés
+            elif message.startswith("@"):
+                # Logique pour les messages privés
+                if send_private_message(username, message):
+                    continue
+
+            else:
+                # Logique pour les messages publics
+                broadcast(f"{username} says: {message}", sender_username=username)
 
     except ConnectionResetError:
         print(f"Connection reset by peer: {client_address}")

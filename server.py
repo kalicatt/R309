@@ -1,3 +1,31 @@
+"""
+Serveur de chat multi-salons avec authentification et administration.
+
+Ce serveur de chat permet à plusieurs utilisateurs de se connecter, de s'inscrire, de se connecter et de communiquer dans différents salons de discussion. Les utilisateurs peuvent envoyer des messages publics dans un salon ou des messages privés à un autre utilisateur. Les fonctionnalités incluent également la gestion des utilisateurs (bannissement, exclusion temporaire) et la possibilité pour un administrateur de superviser et de gérer le serveur.
+
+Fonctions clés :
+- Connexion à une base de données MySQL pour stocker les informations des utilisateurs et les messages.
+- Fonctionnalités d'enregistrement et de connexion pour les utilisateurs.
+- Possibilité de rejoindre et de quitter des salons de discussion, y compris des salons privés.
+- Envoi de messages publics dans des salons ou de messages privés à des utilisateurs spécifiques.
+- Diffusion de la liste des utilisateurs connectés à tous les clients.
+- Commandes d'administration pour bannir ou exclure temporairement les utilisateurs, et gérer les demandes d'adhésion aux salons privés.
+
+Utilisation :
+1. Exécutez le script pour démarrer le serveur. Le serveur se mettra en écoute sur le port spécifié.
+2. Les clients peuvent se connecter au serveur en utilisant leur propre client de chat compatible.
+3. Les utilisateurs peuvent s'inscrire ou se connecter, rejoindre des salons, envoyer des messages, etc.
+4. L'administrateur peut utiliser des commandes spéciales pour gérer les utilisateurs et les salons.
+
+Note :
+- Assurez-vous que la base de données MySQL est configurée et accessible.
+- Les paramètres de connexion à la base de données (host, user, password, database) doivent être correctement configurés.
+- Ce serveur nécessite la bibliothèque 'mysql.connector' pour la connexion à la base de données et 'bcrypt' pour le hachage des mots de passe.
+
+Auteur : SERVAIS Lucas
+Version : 1.0
+"""
+
 import socket
 import threading
 import mysql.connector

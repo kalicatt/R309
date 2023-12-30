@@ -199,16 +199,23 @@ def send_room_message(cursor, username, room_name, message):
     
     if room:
         room_id = room[0]
-        # Vérifiez si l'utilisateur est membre du salon
+        # Vérifiez si l'utilisateur est membre du salon et approuvé
         cursor.execute("SELECT * FROM room_members WHERE room_id = %s AND user_id = %s AND is_approved = TRUE", (room_id, user_id))
-        if not cursor.fetchone():
+        if cursor.fetchone():
+            # Insérez le message dans la table des messages
+            cursor.execute("INSERT INTO messages (sender_id, message, room_id) VALUES (%s, %s, %s)", (user_id, message, room_id))
+
+            # Formatage du message pour inclure le nom de l'utilisateur et le salon
+            formatted_message = f"{username} in {room_name}: {message}"
+
+            # Envoyez le message formaté uniquement aux membres du salon spécifié
+            broadcast_to_room(room_name, formatted_message, sender_username=username)
+            return "Message sent successfully."
+        else:
             return "You are not a member of this room or your request has not been approved yet."
-        
-        # Insérez le message dans la table des messages
-        cursor.execute("INSERT INTO messages (sender_id, message, room_id) VALUES (%s, %s, %s)", (user_id, message, room_id))
-        return f"Message sent to room: {room_name}"
     else:
         return "Room does not exist."
+
 
 
 # Fonction pour envoyer des messages privés
@@ -247,6 +254,21 @@ def broadcast(message, sender_username=None):
                 print(f"Error sending message to {username}: {e}")
                 client_socket.close()
                 del clients[username]
+
+def broadcast_to_room(room_name, message, sender_username=None):
+    with get_database_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM room_members WHERE room_id = (SELECT id FROM rooms WHERE name = %s)", (room_name,))
+        member_ids = [row[0] for row in cursor.fetchall()]
+        for member_id in member_ids:
+            for username, (client_socket, _) in clients.items():
+                if username != sender_username:
+                    try:
+                        client_socket.send(message.encode())
+                    except Exception as e:
+                        print(f"Error sending message to {username}: {e}")
+                        client_socket.close()
+                        del clients[username]
 
 
 

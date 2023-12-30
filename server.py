@@ -335,80 +335,74 @@ def handle_room_requests(cursor, admin_decision, username, room_name):
 def handle_client(client_socket, client_address):
     username = None
     try:
-        # Établir la connexion avec la base de données
         with get_database_connection() as conn:
             cursor = conn.cursor()
 
-            # Boucle principale pour gérer les commandes du client
             while not shutdown_flag.is_set():
                 cmd_info = client_socket.recv(1024).decode()
                 if not cmd_info:
                     break
 
-                cmd, username, password = cmd_info.split(' ', 2)
+                cmd, *args = cmd_info.split(' ')
 
-                # Traitement des commandes REGISTER et LOGIN
-                if cmd == "REGISTER":
-                    cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-                    if cursor.fetchone():
-                        client_socket.send("Username is already taken. Please try a different username.".encode())
-                        continue
+                if cmd == "REGISTER" or cmd == "LOGIN":
+                    username, password = args
+                    if cmd == "REGISTER":
+                        # Traitement de l'enregistrement
+                        cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+                        if cursor.fetchone():
+                            client_socket.send("Username is already taken. Please try a different username.".encode())
+                            continue
+                        else:
+                            hashed_password = hash_password(password)
+                            cursor.execute("INSERT INTO users (username, password, ip_address, last_login) VALUES (%s, %s, %s, NOW())",
+                                           (username, hashed_password, str(client_address[0])))
+                            conn.commit()
+                            client_socket.send("Registration successful!".encode())
+
+                    elif cmd == "LOGIN":
+                        # Traitement de la connexion
+                        cursor.execute("SELECT id, password FROM users WHERE username = %s", (username,))
+                        user = cursor.fetchone()
+                        if user and verify_password(user[1], password):
+                            client_socket.send("Login successful!".encode())
+                            if username == "admin":
+                                client_socket.send("Logged in as administrator.".encode())
+
+                                 # Ajout de l'utilisateur aux clients connectés
+                            clients[username] = (client_socket, client_address[0])
+                            broadcast_user_list()  # Mettre à jour la liste des utilisateurs connectés
+                            
+                        else:
+                            client_socket.send("Invalid login credentials.".encode())
+                            continue
+
+                    # Continuer pour traiter les messages entrants
+                    continue
+
+                # Traitement des commandes et des messages entrants pour les utilisateurs connectés
+                if username:
+                    if cmd == "/join":
+                        room_name = ' '.join(args)
+                        response = join_room(cursor, username, room_name)
+                        client_socket.send(response.encode())
+
+                    elif cmd == "/leave":
+                        room_name = ' '.join(args)
+                        response = leave_room(cursor, username, room_name)
+                        client_socket.send(response.encode())
+
+                    elif cmd == "/msg":
+                        room_name, room_message = args[0], ' '.join(args[1:])
+                        response = send_room_message(cursor, username, room_name, room_message)
+                        client_socket.send(response.encode())
+
+                    elif cmd.startswith("@"):
+                        send_private_message(username, cmd_info)
+
                     else:
-                        hashed_password = hash_password(password)
-                        cursor.execute("INSERT INTO users (username, password, ip_address, last_login) VALUES (%s, %s, %s, NOW())",
-                                       (username, hashed_password, str(client_address[0])))
-                        conn.commit()
-                        client_socket.send("Registration successful!".encode())
-                        break
-
-                elif cmd == "LOGIN":
-                    cursor.execute("SELECT id, password FROM users WHERE username = %s", (username,))
-                    user = cursor.fetchone()
-                    if user and verify_password(user[1], password):
-                        client_socket.send("Login successful!".encode())
-                        
-                         # Vérifier si l'utilisateur est l'administrateur
-                        if username == "admin":
-                            # Vous êtes maintenant connecté en tant qu'administrateur
-                            # Vous pouvez ajouter ici des logiques spécifiques à l'administrateur
-                            client_socket.send("Logged in as administrator.".encode())
-                            break
-                    else:
-                        client_socket.send("Invalid login credentials.".encode())
-                        continue
-
-            # Ajouter le client à la liste des clients connectés
-            clients[username] = (client_socket, client_address[0])
-            broadcast(f"{username} has joined the chat.", sender_username=username)
-            broadcast_user_list()
-
-            # Gestion des messages entrants
-            while not shutdown_flag.is_set():
-                message = client_socket.recv(1024).decode()
-
-                if message.startswith('/join'):
-                    _, room_name = message.split()
-                    response = join_room(cursor, username, room_name)
-                    client_socket.send(response.encode())
-
-                elif message.startswith('/leave'):
-                    _, room_name = message.split()
-                    response = leave_room(cursor, username, room_name)
-                    client_socket.send(response.encode())
-
-                elif message.startswith('/msg'):
-                    _, room_name, room_message = message.split(' ', 2)
-                    response = send_room_message(cursor, username, room_name, room_message)
-                    client_socket.send(response.encode())
-
-                elif message.startswith("@"):
-                    # Logique pour les messages privés
-                    if send_private_message(username, message):
-                        continue
-
-                else:
-                    # Logique pour les messages publics
-                    broadcast(f"{username} says: {message}", sender_username=username)
+                        # Traitement pour les messages publics
+                        broadcast(f"{username} says: {cmd_info}", sender_username=username)
 
     except ConnectionResetError:
         print(f"Connection reset by peer: {client_address}")
@@ -417,13 +411,14 @@ def handle_client(client_socket, client_address):
     except Exception as e:
         print(f"Error in handle_client: {e}")
     finally:
-        # Fermeture du socket et suppression du client de la liste
         if username and username in clients:
             del clients[username]
             broadcast_user_list()
             if not shutdown_flag.is_set():
                 broadcast(f"{username} has disconnected.")
         client_socket.close()
+
+
 
 
 def fictiousclient():

@@ -1,10 +1,10 @@
-import sys
-import socket
-import json
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QTextEdit, QLineEdit, QInputDialog, 
-                             QMessageBox, QListWidget, QComboBox)
+                             QMessageBox, QListWidget, QComboBox, QTabWidget)
 from PyQt5.QtCore import QThread, pyqtSignal
+import socket
+import json
+import sys
 
 class ClientThread(QThread):
     received_message = pyqtSignal(str)
@@ -23,6 +23,8 @@ class ClientThread(QThread):
                         data = json.loads(message)
                         if data["type"] == "user_list":
                             self.updated_user_list.emit(data["users"])
+                        else:
+                            self.received_message.emit(data["message"])
                     except json.JSONDecodeError:
                         self.received_message.emit(message)
             except Exception as e:
@@ -30,7 +32,10 @@ class ClientThread(QThread):
                 break
 
     def send_message(self, message):
-        self.socket.send(message.encode())
+        try:
+            self.socket.send(message.encode())
+        except Exception as e:
+            print(f"Error sending message: {e}")
 
     def stop(self):
         self.quit()
@@ -56,8 +61,12 @@ class ChatWindow(QWidget):
         self.send_button.clicked.connect(self.send_message)
 
         self.user_list_widget = QListWidget(self)
+
+        self.tab_widget = QTabWidget(self)  # Ajout du widget onglet
+        self.tab_widget.addTab(self.chat_history, "Général")  # Onglet par défaut
+
         layout = QVBoxLayout()
-        layout.addWidget(self.chat_history)
+        layout.addWidget(self.tab_widget)
         layout.addWidget(self.message_box)
         layout.addWidget(self.send_button)
         layout.addWidget(self.user_list_widget)
@@ -66,13 +75,9 @@ class ChatWindow(QWidget):
         self.setWindowTitle('Chat Client')
         self.resize(400, 300)
 
-                # Ajout d'un widget pour sélectionner des salons
+        # Ajout d'un widget pour sélectionner des salons
         self.room_select = QComboBox(self)
-        self.room_select.addItem("Général")
-        self.room_select.addItem("Blabla")
-        self.room_select.addItem("Comptabilité")
-        self.room_select.addItem("Informatique")
-        self.room_select.addItem("Marketing")
+        self.room_select.addItems(["Général", "Blabla", "Comptabilité", "Informatique", "Marketing"])
 
         self.join_room_button = QPushButton('Rejoindre le salon', self)
         self.join_room_button.clicked.connect(self.join_room)

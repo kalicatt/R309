@@ -146,6 +146,37 @@ def broadcast_user_list():
             print(f"Error sending user list: {e}")
 
 
+def add_admin_user():
+    print("Tentative d'ajout de l'administrateur...")
+    admin_username = "admin"
+    admin_password = "admin"  # Remplacez par un mot de passe sécurisé
+
+    # Hacher le mot de passe
+    hashed_password = hash_password(admin_password)
+
+    try:
+        conn = get_database_connection()
+        cursor = conn.cursor()
+
+        # Vérifier si l'administrateur existe déjà
+        cursor.execute("SELECT id FROM users WHERE username = %s", (admin_username,))
+        if cursor.fetchone():
+            print("Un administrateur existe déjà.")
+        else:
+            # Insérer l'administrateur car il n'existe pas encore
+            cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)",
+                           (admin_username, hashed_password))
+            conn.commit()
+            print("Administrateur ajouté avec succès.")
+            
+    except mysql.connector.Error as e:
+        print(f"Erreur lors de l'ajout de l'administrateur: {e}")
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def join_room(cursor, username, room_name):
     # Recherchez l'ID de l'utilisateur
     cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
@@ -270,6 +301,33 @@ def broadcast_to_room(room_name, message, sender_username=None):
                         client_socket.close()
                         del clients[username]
 
+def show_pending_requests(cursor):
+    cursor.execute("""
+        SELECT users.username, rooms.name
+        FROM room_members
+        JOIN users ON room_members.user_id = users.id
+        JOIN rooms ON room_members.room_id = rooms.id
+        WHERE is_approved = FALSE
+    """)
+    pending_requests = cursor.fetchall()
+    for request in pending_requests:
+        print(f"Utilisateur: {request[0]}, Salon: {request[1]}")
+
+
+def handle_room_requests(cursor, admin_decision, username, room_name):
+    # Décider de l'action à entreprendre
+    is_approved = True if admin_decision.lower() == 'approve' else False
+
+    # Mise à jour de la demande d'inscription
+    cursor.execute("""
+        UPDATE room_members
+        SET is_approved = %s
+        WHERE user_id = (SELECT id FROM users WHERE username = %s)
+        AND room_id = (SELECT id FROM rooms WHERE name = %s)
+    """, (is_approved, username, room_name))
+
+
+
 
 
 # Fonction pour gérer chaque client connecté
@@ -308,7 +366,13 @@ def handle_client(client_socket, client_address):
                     user = cursor.fetchone()
                     if user and verify_password(user[1], password):
                         client_socket.send("Login successful!".encode())
-                        break
+                        
+                         # Vérifier si l'utilisateur est l'administrateur
+                        if username == "admin":
+                            # Vous êtes maintenant connecté en tant qu'administrateur
+                            # Vous pouvez ajouter ici des logiques spécifiques à l'administrateur
+                            client_socket.send("Logged in as administrator.".encode())
+                            break
                     else:
                         client_socket.send("Invalid login credentials.".encode())
                         continue
@@ -370,6 +434,25 @@ def fictiousclient():
 # Fonction pour les commandes du serveur
 def server_command():
     global shutdown_flag
+    admin_authenticated = False
+
+    # Authentifier l'administrateur
+    while not admin_authenticated:
+        print("Veuillez vous connecter pour accéder aux commandes serveur.")
+        admin_username = input("Nom d'utilisateur administrateur : ")
+        admin_password = input("Mot de passe administrateur : ")
+
+        # Vérifiez les identifiants avec la base de données
+        with get_database_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT password FROM users WHERE username = %s", (admin_username,))
+            result = cursor.fetchone()
+            if result and verify_password(result[0], admin_password):
+                admin_authenticated = True
+                print("Connecté en tant qu'administrateur. Vous pouvez exécuter des commandes serveur.")
+            else:
+                print("Identifiants incorrects. Veuillez réessayer.")
+
     while not shutdown_flag.is_set():
         cmd_input = input("Enter command: ")
         args = cmd_input.split()
@@ -423,11 +506,25 @@ def server_command():
                 unkick_user(args[1])
                 print(f"Server has unkicked user {args[1]}")
 
+        elif cmd == "show_requests":
+            with get_database_connection() as conn:
+                cursor = conn.cursor()
+                show_pending_requests(cursor)
+
+        elif cmd == "handle_request":
+            if len(args) < 4:
+                print("Usage: handle_request <approve/reject> <username> <room_name>")
+            else:
+                with get_database_connection() as conn:
+                    cursor = conn.cursor()
+                    handle_room_requests(cursor, args[1], args[2], args[3])
+                    conn.commit()
 
 
 # Fonction principale du serveur
 def main():
     initialize_database()
+    add_admin_user()
     host = 'localhost'
     port = 50000
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
